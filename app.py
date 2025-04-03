@@ -1,26 +1,23 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, abort
 import firebase_admin
-from firebase_admin import credentials, db
+from firebase_admin import credentials, db, auth as firebase_auth
 from flask_cors import CORS
-from firebase_admin import auth as firebase_auth
-from functools import wraps
-from flask import request, abort
-import json
 import os
+import json
+from functools import wraps
 
-# Llegeix la variable d'entorn amb el contingut JSON
-firebase_json = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON")
-
-if not firebase_json:
-    raise ValueError("La variable d'entorn GOOGLE_APPLICATION_CREDENTIALS_JSON no està definida.")
-
-# Carrega el JSON directament com a diccionari
-cred_dict = json.loads(firebase_json)
+# Firebase des de variable d'entorn segura
+cred_dict = json.loads(os.environ['GOOGLE_APPLICATION_CREDENTIALS_JSON'])
 cred = credentials.Certificate(cred_dict)
 firebase_admin.initialize_app(cred, {
-    'databaseURL': 'https://gestorllibres-12a81-default-rtdb.europe-west1.firebasedatabase.app/'  # ⚠️ Substitueix per l’URL real de la teva base de dades
+    'databaseURL': 'https://gestorllibres-12a81-default-rtdb.europe-west1.firebasedatabase.app/'  # Canvia per la teva URL real
 })
 
+app = Flask(__name__)
+CORS(app)
+ref = db.reference('socis')
+
+# Middleware per verificar autenticació Firebase
 def verificar_token(f):
     @wraps(f)
     def decorador(*args, **kwargs):
@@ -32,52 +29,51 @@ def verificar_token(f):
             request.email = decoded_token.get('email')
             return f(*args, **kwargs)
         except Exception as e:
-            print("Token invàlid o inexistent:", e)
-            abort(401)  # Unauthorized
+            print("Token invàlid:", e)
+            abort(401)
     return decorador
 
-app = Flask(__name__)
-CORS(app)  # Permet connexions des del teu frontend
-
-ref = db.reference('llibres')
-
-@app.route('/afegir', methods=['POST'])
+# Ruta per afegir un/a soci/a
+@app.route('/afegir-soci', methods=['POST'])
 @verificar_token
-def afegir_llibre():
+def afegir_soci():
     dades = request.json
-    if 'titol' in dades and 'autor' in dades and 'any' in dades:
+    if 'nom' in dades and 'correu' in dades:
         ref.push({
-            'titol': dades['titol'],
-            'autor': dades['autor'],
-            'any': dades['any']
+            'nom': dades['nom'],
+            'correu': dades['correu'],
+            'creat_per': request.email
         })
-        return jsonify({'status': 'ok'}), 201
+        return jsonify({'status': 'afegit'}), 201
     return jsonify({'error': 'Dades incompletes'}), 400
 
-@app.route('/esborrar/<id_llibre>', methods=['DELETE'])
+# Ruta per llistar socis/es
+@app.route('/llista-socis', methods=['GET'])
 @verificar_token
-def esborrar_llibre(id_llibre):
+def llista_socis():
+    tots = ref.get()
+    resultat = []
+    if tots:
+        for id_soci, dades in tots.items():
+            resultat.append({
+                'id': id_soci,
+                'nom': dades['nom'],
+                'correu': dades['correu'],
+                'creat_per': dades.get('creat_per', '')
+            })
+    return jsonify(resultat)
+
+# Ruta per eliminar soci/a
+@app.route('/esborrar-soci/<id_soci>', methods=['DELETE'])
+@verificar_token
+def esborrar_soci(id_soci):
     try:
-        ref.child(id_llibre).delete()
+        ref.child(id_soci).delete()
         return jsonify({'status': 'eliminat'}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/llista', methods=['GET'])
-@verificar_token
-def llista_llibres():
-    tots = ref.get()
-    resultat = []
-    if tots:
-        for id_llibre, dades in tots.items():
-            resultat.append({
-                'id': id_llibre,
-                'titol': dades['titol'],
-                'autor': dades['autor'],
-                'any': dades['any']
-            })
-    return jsonify(resultat)
-
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
+    
