@@ -2,6 +2,9 @@ from flask import Flask, request, jsonify
 import firebase_admin
 from firebase_admin import credentials, db
 from flask_cors import CORS
+from firebase_admin import auth as firebase_auth
+from functools import wraps
+from flask import request, abort
 import json
 import os
 
@@ -18,12 +21,28 @@ firebase_admin.initialize_app(cred, {
     'databaseURL': 'https://gestorllibres-12a81-default-rtdb.europe-west1.firebasedatabase.app/'  # ⚠️ Substitueix per l’URL real de la teva base de dades
 })
 
+def verificar_token(f):
+    @wraps(f)
+    def decorador(*args, **kwargs):
+        auth_header = request.headers.get('Authorization', '')
+        id_token = auth_header.replace('Bearer ', '')
+        try:
+            decoded_token = firebase_auth.verify_id_token(id_token)
+            request.uid = decoded_token['uid']
+            request.email = decoded_token.get('email')
+            return f(*args, **kwargs)
+        except Exception as e:
+            print("Token invàlid o inexistent:", e)
+            abort(401)  # Unauthorized
+    return decorador
+
 app = Flask(__name__)
 CORS(app)  # Permet connexions des del teu frontend
 
 ref = db.reference('llibres')
 
 @app.route('/afegir', methods=['POST'])
+@verificar_token
 def afegir_llibre():
     dades = request.json
     if 'titol' in dades and 'autor' in dades and 'any' in dades:
@@ -36,6 +55,7 @@ def afegir_llibre():
     return jsonify({'error': 'Dades incompletes'}), 400
 
 @app.route('/esborrar/<id_llibre>', methods=['DELETE'])
+@verificar_token
 def esborrar_llibre(id_llibre):
     try:
         ref.child(id_llibre).delete()
@@ -44,6 +64,7 @@ def esborrar_llibre(id_llibre):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/llista', methods=['GET'])
+@verificar_token
 def llista_llibres():
     tots = ref.get()
     resultat = []
