@@ -2,8 +2,18 @@ from flask import Flask, request, jsonify
 import firebase_admin
 from firebase_admin import credentials, db
 from flask_cors import CORS
+import json
+import os
 
-cred = credentials.Certificate("firebase_config.json")
+# Llegeix la variable d'entorn amb el contingut JSON
+firebase_json = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+
+if not firebase_json:
+    raise ValueError("La variable d'entorn GOOGLE_APPLICATION_CREDENTIALS_JSON no està definida.")
+
+# Carrega el JSON directament com a diccionari
+cred_dict = json.loads(firebase_json)
+cred = credentials.Certificate(cred_dict)
 firebase_admin.initialize_app(cred, {
     'databaseURL': 'https://gestorllibres-12a81-default-rtdb.europe-west1.firebasedatabase.app/'  # ⚠️ Substitueix per l’URL real de la teva base de dades
 })
