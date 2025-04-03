@@ -35,6 +35,14 @@ def afegir_llibre():
         return jsonify({'status': 'ok'}), 201
     return jsonify({'error': 'Dades incompletes'}), 400
 
+@app.route('/esborrar/<id_llibre>', methods=['DELETE'])
+def esborrar_llibre(id_llibre):
+    try:
+        ref.child(id_llibre).delete()
+        return jsonify({'status': 'eliminat'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/llista', methods=['GET'])
 def llista_llibres():
     tots = ref.get()
